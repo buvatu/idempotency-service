@@ -1,0 +1,10 @@
+spring:
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/idempotent_operations_test
+      database: idempotent_operations_test
+
+logging:
+  level:
+    com.idempotent: DEBUG
+    org.springframework.data.mongodb: DEBUG

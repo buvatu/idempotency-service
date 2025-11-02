@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: idempotency-service
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/idempotent_service
+      database: idempotent_service
+
+server:
+  port: 8080
+
+logging:
+  level:
+    microservices.helper.idempotency: INFO
+    org.springframework.data.mongodb: INFO
+    root: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+idempotent:
+  scheduling:
+    # Rate in milliseconds for removing expired locks from cache (default: 1 hour)
+    expired-lock-removal-rate: 3600000
