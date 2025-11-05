@@ -3,8 +3,10 @@ spring:
     name: idempotency-service
   data:
     mongodb:
-      uri: mongodb://localhost:27017/idempotent_service
-      database: idempotent_service
+      uri: mongodb://localhost:27017/idempotency_service
+      database: idempotency_service
+  jackson:
+    default-property-inclusion: always
 
 server:
   port: 8080

@@ -2,6 +2,7 @@ package microservices.helper.idempotency.entity;
 
 import lombok.Data;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.util.UUID;
@@ -15,9 +16,9 @@ import java.util.UUID;
 public class FailedIdempotentOperationResult {
 
 	@Id
-	private UUID id;
+	private String id; // In UUIDv4 format
 
-	private UUID idempotencyID;
+    private String lockID;
 
 	private String errorMessage;
 

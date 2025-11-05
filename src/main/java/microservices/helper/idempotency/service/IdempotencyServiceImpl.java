@@ -4,8 +4,15 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
+import microservices.helper.idempotency.entity.*;
+import microservices.helper.idempotency.repository.*;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,19 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import microservices.helper.idempotency.enums.ExecutionResult;
 import microservices.helper.idempotency.exception.IdempotencyException;
 import microservices.helper.idempotency.model.IdempotentOperationResult;
-import microservices.helper.idempotency.model.OperationLockInfo;
 import microservices.helper.idempotency.cache.IdempotentOperationConfigCache;
-import microservices.helper.idempotency.cache.LockCache;
-import microservices.helper.idempotency.entity.FailedIdempotentOperationResult;
-import microservices.helper.idempotency.entity.IdempotentOperation;
-import microservices.helper.idempotency.entity.IdempotentOperationLock;
-import microservices.helper.idempotency.entity.IdempotentOperationLockTemp;
-import microservices.helper.idempotency.entity.StoredIdempotentOperationResult;
-import microservices.helper.idempotency.repository.IdempotentOperationRepository;
-import microservices.helper.idempotency.repository.StoredIdempotentOperationResultRepository;
-import microservices.helper.idempotency.repository.FailedIdempotentOperationResultRepository;
-import microservices.helper.idempotency.repository.IdempotentOperationLockRepository;
-import microservices.helper.idempotency.repository.IdempotentOperationLockTempRepository;
 
 @Service
 @AllArgsConstructor
@@ -39,9 +34,10 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 	private final IdempotentOperationLockTempRepository idempotentOperationLockTempRepository;
 	private final FailedIdempotentOperationResultRepository failedIdempotentOperationResultRepository;
 	private final IdempotentOperationConfigCache idempotentOperationConfigCache;
-	private final LockCache lockCache;
+    private final IdempotentOperationLockBackupRepository idempotentOperationLockBackupRepository;
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
-	@Override
+    @Override
 	public IdempotentOperationResult getStoredExecutionResultOrLockOperation(IdempotentOperationResult input) {
 		log.info("Processing idempotent operation for service: {}, operation: {}, key: {}",
 				input.getService(), input.getOperation(), input.getIdempotencyKey());
@@ -50,14 +46,14 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 		// This is your business requirement - track every request
 		IdempotentOperation idempotentOperation = createIdempotentOperation(input);
 
-		// STEP 2: Check if result already exists (fast path)
+		// STEP 2: Check if a result already exists (fast path)
 		Optional<StoredIdempotentOperationResult> existingResult = checkExistingResult(input);
 		if (existingResult.isPresent()) {
 			log.info("Found existing result, returning cached response");
 			return createSuccessResponse(existingResult.get());
 		}
 
-		// STEP 3: ATOMIC LOCK ACQUISITION - Only ONE thread can succeed for same
+		// STEP 3: ATOMIC LOCK ACQUISITION - Only ONE thread can succeed for the same
 		// (service, operation, idempotencyKey)
 		// This uses MongoDB's unique constraint to ensure atomicity
 		return atomicLockAcquisition(input, idempotentOperation);
@@ -79,10 +75,9 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 		return output;
 	}
 
-	@Transactional
 	private IdempotentOperation createIdempotentOperation(IdempotentOperationResult input) {
 		IdempotentOperation idempotentOperation = new IdempotentOperation();
-		idempotentOperation.setId(UUID.randomUUID());
+		idempotentOperation.setId(UUID.randomUUID().toString());
 		idempotentOperation.setService(input.getService());
 		idempotentOperation.setOperation(input.getOperation());
 		idempotentOperation.setIdempotencyKey(input.getIdempotencyKey());
@@ -100,36 +95,32 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 	/**
 	 * ATOMIC LOCK ACQUISITION - Guarantees only ONE lock per (service, operation,
 	 * idempotencyKey)
-	 * Uses MongoDB's unique constraint on temp lock collection for atomicity
+	 * Uses MongoDB's unique constraint on a temp lock collection for atomicity
 	 */
-	@Transactional
-	private IdempotentOperationResult atomicLockAcquisition(IdempotentOperationResult input,
-			IdempotentOperation idempotentOperation) {
+	private IdempotentOperationResult atomicLockAcquisition(IdempotentOperationResult input, IdempotentOperation idempotentOperation) {
 		UUID lockId = UUID.randomUUID();
 		Instant now = Instant.now();
-		Instant expiredAt = now
-				.plus(idempotentOperationConfigCache.getLockDuration(input.getService(), input.getOperation()));
+		Instant expiredAt = now.plus(idempotentOperationConfigCache.getLockDuration(input.getService(), input.getOperation()));
 
 		try {
 			// ATOMIC OPERATION: Try to acquire lock using MongoDB's unique constraint
 			// MongoDB's unique constraint on (service, operation, idempotencyKey) ensures
 			// only ONE succeeds
 			IdempotentOperationLockTemp tempLock = new IdempotentOperationLockTemp();
-			tempLock.setId(lockId);
+			tempLock.setId(lockId.toString());
 			tempLock.setService(input.getService());
 			tempLock.setOperation(input.getOperation());
 			tempLock.setIdempotencyKey(input.getIdempotencyKey());
 			tempLock.setLockedAt(now);
 			tempLock.setExpiredAt(expiredAt);
 
-			// This INSERT will FAIL with DuplicateKeyException if another thread already
-			// has the lock
-			tempLock = idempotentOperationLockTempRepository.insert(tempLock);
-			log.info("✅ ATOMIC LOCK ACQUIRED for service: {}, operation: {}, key: {}",
-					input.getService(), input.getOperation(), input.getIdempotencyKey());
+			// ATOMIC ACTION 1: Insert temporary lock (this will FAIL with DuplicateKeyException if another thread already has the lock)
+			idempotentOperationLockTempRepository.insert(tempLock);
+            scheduler.schedule(() -> deleteTempLock(lockId.toString()), tempLock.getExpiredAt().toEpochMilli() - Instant.now().toEpochMilli() , TimeUnit.MILLISECONDS);
+			log.info("ATOMIC LOCK ACQUIRED for service: {}, operation: {}, key: {}", input.getService(), input.getOperation(), input.getIdempotencyKey());
 
-			// Store in cache (non-critical, don't fail if this fails)
-			storeLockInCache(tempLock, idempotentOperation);
+			// ATOMIC ACTION 2: Store backup lock (non-critical, don't fail if this fails)
+            insertLockBackup(lockId.toString(), idempotentOperation.getId(), tempLock.getLockedAt(), tempLock.getExpiredAt());
 
 			// Return success response
 			return createLockAcquiredResponse(idempotentOperation, tempLock);
@@ -143,7 +134,7 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 			// Check if the other thread has completed and saved a result
 			Optional<StoredIdempotentOperationResult> completedResult = checkExistingResult(input);
 			if (completedResult.isPresent()) {
-				log.info("✅ Found completed result from other thread");
+				log.info("Found completed result from other thread");
 				return createSuccessResponse(completedResult.get());
 			}
 
@@ -153,27 +144,12 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 					ExecutionResult.OPERATION_ALREADY_LOCKED);
 
 		} catch (Exception e) {
-			log.error("❌ Failed to acquire lock for operation", e);
+			log.error("Failed to acquire lock for operation", e);
 			throw new IdempotencyException("Failed to acquire lock for operation", e, ExecutionResult.OPERATION_FAILED);
 		}
 	}
 
-	private void storeLockInCache(IdempotentOperationLockTemp tempLock, IdempotentOperation idempotentOperation) {
-		try {
-			OperationLockInfo lockInfo = new OperationLockInfo();
-			lockInfo.setLockID(tempLock.getId());
-			lockInfo.setIdempotencyID(idempotentOperation.getId());
-			lockInfo.setLockedAt(tempLock.getLockedAt());
-			lockInfo.setExpiredAt(tempLock.getExpiredAt());
-			lockCache.storeLockInCache(lockInfo);
-		} catch (Exception e) {
-			log.error("Failed to store lock in cache, but operation will continue", e);
-			// Don't throw exception here as the lock is already acquired in DB
-		}
-	}
-
-	private IdempotentOperationResult createLockAcquiredResponse(IdempotentOperation idempotentOperation,
-			IdempotentOperationLockTemp tempLock) {
+	private IdempotentOperationResult createLockAcquiredResponse(IdempotentOperation idempotentOperation, IdempotentOperationLockTemp tempLock) {
 		log.info("Successfully acquired lock for operation");
 		IdempotentOperationResult output = new IdempotentOperationResult();
 		output.setIdempotencyID(idempotentOperation.getId());
@@ -192,21 +168,25 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 
 		validateInput(input);
 
+		// ATOMIC ACTION 1: Save the operation result (success or failure)
 		if (isSuccessfulOperation(input)) {
 			saveSuccessfulResult(input);
 		} else {
 			saveFailedResult(input);
 		}
 
+		// ATOMIC ACTION 2: Release lock
 		releaseLock(input);
-		cleanupTempLock(input);
+		
+		// ATOMIC ACTION 3: Delete temporary lock
+        deleteTempLock(input.getLockID());
 	}
 
 	private void validateInput(IdempotentOperationResult input) {
-		if (input.getLockID() == null) {
+		if (Objects.isNull(input.getLockID())) {
 			throw new IdempotencyException("Lock ID is required", ExecutionResult.OPERATION_FAILED);
 		}
-		if (input.getIdempotencyID() == null) {
+		if (Objects.isNull(input.getIdempotencyID())) {
 			throw new IdempotencyException("Idempotency ID is required", ExecutionResult.OPERATION_FAILED);
 		}
 	}
@@ -214,22 +194,28 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 	private boolean isSuccessfulOperation(IdempotentOperationResult input) {
 		boolean isSuccess = ExecutionResult.SUCCESS.getValue().equalsIgnoreCase(input.getExecutionResult());
 		boolean isNotExpired = input.getExpiredAt() != null && input.getExpiredAt().isAfter(Instant.now());
-		boolean allowSaveOnExpired = idempotentOperationConfigCache.isAllowSaveOnExpired(
-				input.getService(), input.getOperation());
-
+		boolean allowSaveOnExpired = idempotentOperationConfigCache.isAllowSaveOnExpired(input.getService(), input.getOperation());
 		return isSuccess && (isNotExpired || allowSaveOnExpired);
 	}
 
 	private void saveSuccessfulResult(IdempotentOperationResult input) {
+		// ATOMIC ACTION 1: Insert successful result
+		insertSuccessfulResult(input);
+		
+		// ATOMIC ACTION 2: Delete the failed result (if exists)
+		deleteFailedResultById(input.getIdempotencyID());
+	}
+	
+	private void insertSuccessfulResult(IdempotentOperationResult input) {
 		try {
 			StoredIdempotentOperationResult storedResult = new StoredIdempotentOperationResult();
-			storedResult.setId(UUID.randomUUID());
+			storedResult.setId(UUID.randomUUID().toString());
 			storedResult.setService(input.getService());
 			storedResult.setOperation(input.getOperation());
 			storedResult.setIdempotencyKey(input.getIdempotencyKey());
 			storedResult.setIdempotentOperationResult(input.getIdempotentOperationResult());
 
-			// Use insert which will fail if duplicate exists (due to unique constraint)
+			// Use insert which will fail if a duplicate exists (due to unique constraint)
 			storedIdempotentOperationResultRepository.insert(storedResult);
 			log.info("✅ Successfully saved operation result atomically");
 		} catch (DuplicateKeyException e) {
@@ -242,14 +228,24 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 			throw new IdempotencyException("Failed to save operation result", e, ExecutionResult.OPERATION_FAILED);
 		}
 	}
+	
+	private void deleteFailedResultById(String idempotencyID) {
+		try {
+			failedIdempotentOperationResultRepository.deleteById(idempotencyID);
+			log.debug("Deleted failed result for idempotencyID: {}", idempotencyID);
+		} catch (Exception e) {
+			log.warn("Failed to delete failed result for idempotencyID: {} - {}", idempotencyID, e.getMessage());
+			// Don't throw exception as this is a cleanup operation
+		}
+	}
 
 	private void saveFailedResult(IdempotentOperationResult input) {
 		try {
 			FailedIdempotentOperationResult failedResult = new FailedIdempotentOperationResult();
-			failedResult.setId(input.getLockID());
-			failedResult.setIdempotencyID(input.getIdempotencyID());
+			failedResult.setId(input.getIdempotencyID());
+			failedResult.setLockID(input.getLockID());
 
-			String errorMessage = ExecutionResult.SUCCESS.getValue().equalsIgnoreCase(input.getExecutionResult())
+			String errorMessage = Objects.isNull(input.getExecutionResult()) || ExecutionResult.SUCCESS.getValue().equalsIgnoreCase(input.getExecutionResult())
 					? "Operation expired"
 					: input.getIdempotentOperationResult();
 			failedResult.setErrorMessage(errorMessage);
@@ -258,38 +254,88 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 			log.info("Saved failed operation result with error: {}", errorMessage);
 		} catch (Exception e) {
 			log.error("Failed to save failed operation result", e);
-			throw new IdempotencyException("Failed to save failed operation result", e,
-					ExecutionResult.OPERATION_FAILED);
+			throw new IdempotencyException("Failed to save failed operation result", e, ExecutionResult.OPERATION_FAILED);
 		}
 	}
 
 	private void releaseLock(IdempotentOperationResult input) {
+		// ATOMIC ACTION 1: Insert lock record
+		insertLockRecord(input);
+		
+		// ATOMIC ACTION 2: Delete backup lock
+		deleteLockBackupById(input.getLockID());
+	}
+	
+	private void insertLockRecord(IdempotentOperationResult input) {
 		try {
 			IdempotentOperationLock lock = new IdempotentOperationLock();
 			lock.setId(input.getLockID());
 			lock.setIdempotencyID(input.getIdempotencyID());
 			lock.setLockedAt(input.getLockedAt());
 			lock.setExpiredAt(input.getExpiredAt());
-			lock.setReleasedAt(Instant.now());
+			lock.setCreatedAt(Instant.now());
 			idempotentOperationLockRepository.insert(lock);
-			log.info("Successfully released lock");
+			log.info("Successfully inserted lock");
 		} catch (Exception e) {
-			log.error("Failed to release lock", e);
-			throw new IdempotencyException("Failed to release lock", e, ExecutionResult.OPERATION_FAILED);
+			log.error("Failed to inserted lock", e);
+		}
+	}
+	
+	private void deleteLockBackupById(String lockID) {
+		try {
+			idempotentOperationLockBackupRepository.deleteById(lockID);
+			log.debug("Deleted lock backup for lockID: {}", lockID);
+		} catch (Exception e) {
+			log.warn("Failed to delete lock backup for lockID: {} - {}", lockID, e.getMessage());
+			// Don't throw exception as this is a cleanup operation
+		}
+	}
+	
+	private void insertLockBackup(String lockId, String idempotencyID, Instant lockedAt, Instant expiredAt) {
+		try {
+			IdempotentOperationLockBackup idempotentOperationLockBackup = new IdempotentOperationLockBackup();
+			idempotentOperationLockBackup.setId(lockId);
+			idempotentOperationLockBackup.setIdempotencyID(idempotencyID);
+			idempotentOperationLockBackup.setLockedAt(lockedAt);
+			idempotentOperationLockBackup.setExpiredAt(expiredAt);
+			idempotentOperationLockBackupRepository.insert(idempotentOperationLockBackup);
+			log.debug("Inserted lock backup for lockID: {}", lockId);
+		} catch (Exception e) {
+			log.warn("Failed to insert lock backup for lockID: {} - {}", lockId, e.getMessage());
+			// Don't throw exception as this is a non-critical backup operation
 		}
 	}
 
-	private void cleanupTempLock(IdempotentOperationResult input) {
-		if (Objects.isNull(input.getLockID())) {
-			return;
-		}
+	private void deleteTempLock(String lockID) {
 		try {
-			idempotentOperationLockTempRepository.deleteById(input.getLockID());
-			lockCache.removeLockFromCache(input.getLockID());
+			idempotentOperationLockTempRepository.deleteById(lockID);
 			log.info("Successfully cleaned up temporary lock");
 		} catch (Exception e) {
 			log.error("Failed to cleanup temporary lock, but operation completed successfully", e);
 			// Don't throw exception here as the main operation is complete
 		}
 	}
+
+    @Scheduled(fixedRateString = "${idempotent.scheduling.expired-lock-removal-rate:3600000}")
+    public void removeExpiredLocks() {
+        try (Stream<IdempotentOperationLockBackup> expiredLockStream = idempotentOperationLockBackupRepository.findByExpiredAtBefore(Instant.now())) {
+            expiredLockStream.forEach(expiredLock -> {
+                IdempotentOperationResult input = new IdempotentOperationResult();
+                input.setLockID(expiredLock.getId());
+                input.setIdempotencyID(expiredLock.getIdempotencyID());
+                input.setLockedAt(expiredLock.getLockedAt());
+                input.setExpiredAt(expiredLock.getExpiredAt());
+                
+                // ATOMIC ACTION 1: Release lock
+                releaseLock(input);
+                
+                // ATOMIC ACTION 2: Save the failed result
+                saveFailedResult(input);
+            });
+        } catch (Exception e) {
+            // Handle the unchecked exception here
+            System.err.println("An error occurred during stream processing: " + e.getMessage());
+        }
+    }
+
 }

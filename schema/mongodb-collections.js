@@ -1,8 +1,8 @@
 // MongoDB Collection Creation Script for Idempotent Operation Service
 // This script creates all required collections with validation schemas
 
-// Use the idempotent_service database
-use('idempotent_service');
+// Use the idempotency database
+use('idempotency_service');
 
 print('Creating collections for Idempotent Operation Service...');
 
@@ -16,7 +16,7 @@ db.createCollection("idempotent_operation_config", {
             required: ["service", "operation", "lockDuration", "allowSaveOnExpired"],
             properties: {
                 _id: {
-                    bsonType: "binData",
+                    bsonType: "string",
                     description: "UUID primary key"
                 },
                 service: {
@@ -28,7 +28,7 @@ db.createCollection("idempotent_operation_config", {
                     description: "Operation name - required string"
                 },
                 lockDuration: {
-                    bsonType: "object",
+                    bsonType: "string",
                     description: "Lock duration as Duration object - required"
                 },
                 allowSaveOnExpired: {
@@ -52,7 +52,7 @@ db.createCollection("idempotent_operation", {
             required: ["service", "operation", "idempotencyKey"],
             properties: {
                 _id: {
-                    bsonType: "binData",
+                    bsonType: "string",
                     description: "UUID primary key"
                 },
                 service: {
@@ -88,7 +88,7 @@ db.createCollection("idempotent_operation_lock_temp", {
             required: ["service", "operation", "idempotencyKey", "lockedAt", "expiredAt"],
             properties: {
                 _id: {
-                    bsonType: "binData",
+                    bsonType: "string",
                     description: "UUID primary key"
                 },
                 service: {
@@ -128,7 +128,7 @@ db.createCollection("stored_idempotent_operation_result", {
             required: ["service", "operation", "idempotencyKey", "idempotentOperationResult"],
             properties: {
                 _id: {
-                    bsonType: "binData",
+                    bsonType: "string",
                     description: "UUID primary key"
                 },
                 service: {
@@ -164,11 +164,11 @@ db.createCollection("idempotent_operation_lock", {
             required: ["idempotencyID"],
             properties: {
                 _id: {
-                    bsonType: "binData",
+                    bsonType: "string",
                     description: "UUID primary key"
                 },
                 idempotencyID: {
-                    bsonType: "binData",
+                    bsonType: "string",
                     description: "UUID idempotency ID - required and unique"
                 },
                 lockedAt: {
@@ -179,7 +179,7 @@ db.createCollection("idempotent_operation_lock", {
                     bsonType: "date",
                     description: "Lock expiration timestamp"
                 },
-                releasedAt: {
+                createdAt: {
                     bsonType: "date",
                     description: "Lock release timestamp"
                 }
@@ -190,6 +190,38 @@ db.createCollection("idempotent_operation_lock", {
 
 print('✓ Created idempotent_operation_lock collection');
 
+// ========== idempotent_operation_lock_backup Collection ==========
+print('Creating idempotent_operation_lock_backup collection...');
+
+db.createCollection("idempotent_operation_lock_backup", {
+    validator: {
+        $jsonSchema: {
+            bsonType: "object",
+            required: ["idempotencyID"],
+            properties: {
+                _id: {
+                    bsonType: "string",
+                    description: "UUID primary key"
+                },
+                idempotencyID: {
+                    bsonType: "string",
+                    description: "UUID idempotency ID - required and unique"
+                },
+                lockedAt: {
+                    bsonType: "date",
+                    description: "Lock acquisition timestamp"
+                },
+                expiredAt: {
+                    bsonType: "date",
+                    description: "Lock expiration timestamp"
+                },
+            }
+        }
+    }
+});
+
+print('✓ Created idempotent_operation_lock_backup collection');
+
 // ========== failed_idempotent_operation_result Collection ==========
 print('Creating failed_idempotent_operation_result collection...');
 
@@ -197,15 +229,15 @@ db.createCollection("failed_idempotent_operation_result", {
     validator: {
         $jsonSchema: {
             bsonType: "object",
-            required: ["idempotencyID", "errorMessage"],
+            required: ["lockID", "errorMessage"],
             properties: {
                 _id: {
-                    bsonType: "binData",
+                    bsonType: "string",
                     description: "UUID primary key"
                 },
-                idempotencyID: {
-                    bsonType: "binData",
-                    description: "UUID idempotency ID - required"
+                lockID: {
+                    bsonType: "string",
+                    description: "UUID lock ID - required"
                 },
                 errorMessage: {
                     bsonType: "string",
@@ -271,7 +303,7 @@ print('All indexes created successfully!');
 // ========== Verify Collections ==========
 print('\nVerifying created collections...');
 
-db.listCollectionNames().forEach(name => {
+db.getCollectionNames().forEach(name => {
     if (name.includes('idempotent')) {
         print('✓ Collection: ' + name);
     }

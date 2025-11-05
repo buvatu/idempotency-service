@@ -18,7 +18,7 @@ import java.util.UUID;
 public class IdempotentOperationConfig {
 
 	@Id
-	private UUID id;
+	private String id;// In UUIDv4 format
 
 	private String service;
 

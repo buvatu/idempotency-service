@@ -30,10 +30,6 @@ public class IdempotentOperationConfigCache {
 		operationConfigList.addAll(idempotentOperationConfigRepository.findAll());
 	}
 
-	public List<IdempotentOperationConfig> getOperationConfigList() {
-		return operationConfigList;
-	}
-
 	public boolean isAllowSaveOnExpired(String service, String operation) {
 		IdempotentOperationConfig operationConfig = findInCurrentList(service, operation);
 		if (operationConfig != null) {
@@ -71,16 +67,13 @@ public class IdempotentOperationConfigCache {
 
 	private IdempotentOperationConfig findInDB(String service, String operation) {
 		Optional<IdempotentOperationConfig> operationConfigOpt = idempotentOperationConfigRepository.findByServiceAndOperation(service, operation);
-		if (operationConfigOpt.isPresent()) {
-			return operationConfigOpt.get();
-		}
-		return null;
-	}
+        return operationConfigOpt.orElse(null);
+    }
 
 	private void saveNewOperationConfig(String service, String operation) {
 		try {
 			IdempotentOperationConfig newOperationConfig = new IdempotentOperationConfig();
-			newOperationConfig.setId(UUID.randomUUID());
+			newOperationConfig.setId(UUID.randomUUID().toString());
 			newOperationConfig.setService(service);
 			newOperationConfig.setOperation(operation);
 			newOperationConfig.setLockDuration(Duration.ofMillis(5000));

@@ -8,8 +8,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 public class IdempotencyServiceApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(IdempotencyServiceApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(IdempotencyServiceApplication.class, args);
+    }
 
 }
+

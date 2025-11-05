@@ -1,16 +1,15 @@
 package microservices.helper.idempotency.entity;
 
-import java.time.Instant;
-
+import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import lombok.Data;
+import java.time.Instant;
 
-@Document(collection = "idempotent_operation_lock")
+@Document(collection = "idempotent_operation_lock_backup")
 @Data
-public class IdempotentOperationLock {
+public class IdempotentOperationLockBackup {
 
 	@Id
 	private String id;// In UUIDv4 format
@@ -21,7 +20,5 @@ public class IdempotentOperationLock {
 	private Instant lockedAt;
 
 	private Instant expiredAt;
-
-	private Instant createdAt;
 
 }

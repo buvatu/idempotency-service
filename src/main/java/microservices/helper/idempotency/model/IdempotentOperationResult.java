@@ -10,7 +10,7 @@ import lombok.Setter;
 @Getter @Setter
 public class IdempotentOperationResult {
 
-	private UUID idempotencyID;
+	private String idempotencyID;// In UUIDv4 format
 	
 	@NotBlank(message = "Service name is required")
 	private String service;
@@ -21,7 +21,7 @@ public class IdempotentOperationResult {
 	@NotBlank(message = "Idempotency key is required")
 	private String idempotencyKey;
 	
-	private UUID lockID;
+	private String lockID;// In UUIDv4 format
 	private String executionResult;
 	private String idempotentOperationResult;
 	private Instant lockedAt;

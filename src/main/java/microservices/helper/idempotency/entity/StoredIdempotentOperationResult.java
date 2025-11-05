@@ -14,7 +14,7 @@ import lombok.Data;
 public class StoredIdempotentOperationResult {
 
 	@Id
-	private UUID id;
+	private String id;// In UUIDv4 format
 
 	private String service;
 

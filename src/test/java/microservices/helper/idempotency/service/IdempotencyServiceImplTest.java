@@ -18,7 +18,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
 
 import microservices.helper.idempotency.cache.IdempotentOperationConfigCache;
-import microservices.helper.idempotency.cache.LockCache;
 import microservices.helper.idempotency.entity.FailedIdempotentOperationResult;
 import microservices.helper.idempotency.entity.IdempotentOperation;
 import microservices.helper.idempotency.entity.IdempotentOperationLock;
