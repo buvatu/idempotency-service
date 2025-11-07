@@ -190,38 +190,6 @@ db.createCollection("idempotent_operation_lock", {
 
 print('✓ Created idempotent_operation_lock collection');
 
-// ========== idempotent_operation_lock_backup Collection ==========
-print('Creating idempotent_operation_lock_backup collection...');
-
-db.createCollection("idempotent_operation_lock_backup", {
-    validator: {
-        $jsonSchema: {
-            bsonType: "object",
-            required: ["idempotencyID"],
-            properties: {
-                _id: {
-                    bsonType: "string",
-                    description: "UUID primary key"
-                },
-                idempotencyID: {
-                    bsonType: "string",
-                    description: "UUID idempotency ID - required and unique"
-                },
-                lockedAt: {
-                    bsonType: "date",
-                    description: "Lock acquisition timestamp"
-                },
-                expiredAt: {
-                    bsonType: "date",
-                    description: "Lock expiration timestamp"
-                },
-            }
-        }
-    }
-});
-
-print('✓ Created idempotent_operation_lock_backup collection');
-
 // ========== failed_idempotent_operation_result Collection ==========
 print('Creating failed_idempotent_operation_result collection...');
 
@@ -276,27 +244,6 @@ db.stored_idempotent_operation_result.createIndex(
     }
 );
 print('✓ Created unique index on stored_idempotent_operation_result');
-
-// Compound index for efficient lookups
-db.idempotent_operation.createIndex(
-    { "service": 1, "operation": 1, "idempotencyKey": 1, "createdAt": 1 }, 
-    { 
-        name: "operation_lookup_idx",
-        background: true 
-    }
-);
-print('✓ Created compound index on idempotent_operation');
-
-// TTL index on temp locks to auto-cleanup expired locks
-db.idempotent_operation_lock_temp.createIndex(
-    { "expiredAt": 1 }, 
-    { 
-        expireAfterSeconds: 0,
-        name: "temp_lock_ttl_idx",
-        background: true 
-    }
-);
-print('✓ Created TTL index on idempotent_operation_lock_temp');
 
 print('All indexes created successfully!');
 
