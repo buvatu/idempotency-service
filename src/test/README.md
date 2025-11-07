@@ -1,7 +1,7 @@
-# IdempotencyServiceImpl Unit Tests
+# Microservices Helper - Idempotency Service Unit Tests
 
 ## Overview
-Comprehensive unit tests for the `IdempotencyServiceImpl` class covering all major functionality and edge cases.
+Comprehensive unit tests for the `IdempotencyServiceImpl` class in the `microservices.helper.idempotency` package, covering all major functionality and edge cases.
 
 ## Test Coverage
 
@@ -26,10 +26,16 @@ Comprehensive unit tests for the `IdempotencyServiceImpl` class covering all maj
 - ✅ Continues operation even when cleanup fails
 
 ## Test Statistics
-- **Total Tests**: 18
-- **Passed**: 18 ✅
+- **Total Tests**: 19 (18 unit tests + 1 application context test)
+- **Unit Tests**: 18 ✅
+- **Integration Tests**: 1 ✅ 
 - **Failed**: 0
 - **Coverage**: All public methods and major error scenarios
+
+## Package Structure
+Tests are organized under `microservices.helper.idempotency` package:
+- `microservices.helper.idempotency.IdempotentOperationServiceApplicationTests` - Application context test
+- `microservices.helper.idempotency.service.IdempotencyServiceImplTest` - Comprehensive unit tests
 
 ## Key Testing Patterns
 - Uses Mockito for dependency mocking

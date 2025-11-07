@@ -22,6 +22,9 @@ public class IdempotentOperationLockTemp {
 	@Id
 	private String id;// In UUIDv4 format
 
+    @Indexed(unique = true)
+    private String idempotencyID;// In UUIDv4 format
+
 	private String service;
 
 	private String operation;

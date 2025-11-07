@@ -47,7 +47,6 @@ docker run -d --name mongodb -p 27017:27017 mongo:latest
 
 # Create database and collections
 mongosh --file schema/mongodb-collections.js
-mongosh --file schema/mongodb-indexes.js
 ```
 
 ### 3. Configure Application
