@@ -1,5 +1,6 @@
 package microservices.helper.idempotency.service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -19,6 +20,7 @@ import microservices.helper.idempotency.enums.ExecutionResult;
 import microservices.helper.idempotency.exception.IdempotencyException;
 import microservices.helper.idempotency.model.IdempotentOperationResult;
 import microservices.helper.idempotency.cache.IdempotentOperationConfigCache;
+import org.springframework.util.DigestUtils;
 
 @Service
 @AllArgsConstructor
@@ -42,7 +44,7 @@ public class IdempotencyServiceImpl implements IdempotencyService {
         IdempotentOperation idempotentOperation = createIdempotentOperation(input);
 
         // STEP 2: Check if a result already exists (fast path)
-        Optional<StoredIdempotentOperationResult> existingResult = storedIdempotentOperationResultRepository.findByServiceAndOperationAndIdempotencyKey(input.getService(), input.getOperation(), input.getIdempotencyKey());
+        Optional<StoredIdempotentOperationResult> existingResult = storedIdempotentOperationResultRepository.findById(getHashedKey(input.getService(), input.getOperation(), input.getIdempotencyKey()));
         if (existingResult.isPresent()) {
             log.info("Found existing result, returning cached response");
             return createSuccessResponse(existingResult.get());
@@ -60,6 +62,10 @@ public class IdempotencyServiceImpl implements IdempotencyService {
             }
         }, tempLock.getExpiredAt().toEpochMilli() - Instant.now().toEpochMilli(), TimeUnit.MILLISECONDS);
         return createLockAcquiredResponse(tempLock);
+    }
+
+    private String getHashedKey(String service, String operation, String idempotencyKey) {
+        return new String(DigestUtils.md5Digest((service + "-" + operation + "-" + idempotencyKey).getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);
     }
 
     private IdempotentOperation createIdempotentOperation(IdempotentOperationResult input) {
@@ -82,6 +88,9 @@ public class IdempotencyServiceImpl implements IdempotencyService {
         IdempotentOperationResult output = new IdempotentOperationResult();
         output.setExecutionResult(ExecutionResult.SUCCESS.getValue());
         output.setIdempotentOperationResult(storedResult.getIdempotentOperationResult());
+        output.setService(storedResult.getService());
+        output.setOperation(storedResult.getOperation());
+        output.setIdempotencyKey(storedResult.getIdempotencyKey());
         return output;
     }
 
@@ -171,7 +180,7 @@ public class IdempotencyServiceImpl implements IdempotencyService {
     private void insertSuccessfulResult(IdempotentOperationResult input) {
         try {
             StoredIdempotentOperationResult storedResult = new StoredIdempotentOperationResult();
-            storedResult.setId(UUID.randomUUID().toString());
+            storedResult.setId(getHashedKey(input.getService(),  input.getOperation(), input.getIdempotencyKey()));
             storedResult.setService(input.getService());
             storedResult.setOperation(input.getOperation());
             storedResult.setIdempotencyKey(input.getIdempotencyKey());
