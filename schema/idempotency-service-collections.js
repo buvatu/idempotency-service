@@ -13,7 +13,7 @@ db.createCollection("idempotent_operation_config", {
     validator: {
         $jsonSchema: {
             bsonType: "object",
-            required: ["service", "operation", "lockDuration", "allowSaveOnExpired"],
+            required: ["service", "operation", "lockDuration"],
             properties: {
                 _id: {
                     bsonType: "string",
@@ -30,10 +30,6 @@ db.createCollection("idempotent_operation_config", {
                 lockDuration: {
                     bsonType: "string",
                     description: "Lock duration as Duration object - required"
-                },
-                allowSaveOnExpired: {
-                    bsonType: "bool",
-                    description: "Whether to allow saving on expired operations - required boolean"
                 }
             }
         }
@@ -85,11 +81,15 @@ db.createCollection("idempotent_operation_lock_temp", {
     validator: {
         $jsonSchema: {
             bsonType: "object",
-            required: ["service", "operation", "idempotencyKey", "lockedAt", "expiredAt"],
+            required: ["idempotencyId", "service", "operation", "idempotencyKey", "lockedAt", "expiredAt"],
             properties: {
                 _id: {
                     bsonType: "string",
                     description: "UUID primary key"
+                },
+                idempotencyId: {
+                    bsonType: "string",
+                    description: "Idempotency Id - required string"
                 },
                 service: {
                     bsonType: "string",
@@ -129,7 +129,7 @@ db.createCollection("stored_idempotent_operation_result", {
             properties: {
                 _id: {
                     bsonType: "string",
-                    description: "UUID primary key"
+                    description: "base64 hashed string from combination of service, operation and idempotencyKey",
                 },
                 service: {
                     bsonType: "string",
@@ -161,15 +161,15 @@ db.createCollection("idempotent_operation_lock", {
     validator: {
         $jsonSchema: {
             bsonType: "object",
-            required: ["idempotencyID"],
+            required: ["idempotencyId", "createdAt", "lockedAt", "expiredAt"],
             properties: {
                 _id: {
                     bsonType: "string",
                     description: "UUID primary key"
                 },
-                idempotencyID: {
+                idempotencyId: {
                     bsonType: "string",
-                    description: "UUID idempotency ID - required and unique"
+                    description: "UUID idempotency Id - required and unique"
                 },
                 lockedAt: {
                     bsonType: "date",
@@ -197,15 +197,15 @@ db.createCollection("failed_idempotent_operation_result", {
     validator: {
         $jsonSchema: {
             bsonType: "object",
-            required: ["lockID", "errorMessage"],
+            required: ["lockId", "errorMessage"],
             properties: {
                 _id: {
                     bsonType: "string",
                     description: "UUID primary key"
                 },
-                lockID: {
+                lockId: {
                     bsonType: "string",
-                    description: "UUID lock ID - required"
+                    description: "UUID lock Id - required"
                 },
                 errorMessage: {
                     bsonType: "string",
@@ -224,12 +224,23 @@ print('All collections created successfully!');
 print('\nCreating unique indexes for atomic lock acquisition...');
 
 // Unique index on temp lock collection to prevent duplicate locks
+db.idempotent_operation_config.createIndex(
+    { "service": 1, "operation": 1 },
+    {
+        unique: true,
+        name: "unique_operation_config_idx",
+        background: true
+    }
+);
+print('✓ Created unique index on idempotent_operation_config');
+
+// Unique index on temp lock collection to prevent duplicate locks
 db.idempotent_operation_lock_temp.createIndex(
-    { "service": 1, "operation": 1, "idempotencyKey": 1 }, 
-    { 
-        unique: true, 
+    { "service": 1, "operation": 1, "idempotencyKey": 1 },
+    {
+        unique: true,
         name: "unique_operation_lock_idx",
-        background: true 
+        background: true
     }
 );
 print('✓ Created unique index on idempotent_operation_lock_temp');

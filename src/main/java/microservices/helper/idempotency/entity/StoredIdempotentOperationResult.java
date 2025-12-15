@@ -11,15 +11,15 @@ import lombok.Data;
 @Data
 public class StoredIdempotentOperationResult {
 
-	@Id
-	private String id;// In UUIDv4 format
+    @Id
+    private String id;// In UUIDv4 format
 
-	private String service;
+    private String service;
 
-	private String operation;
+    private String operation;
 
-	private String idempotencyKey;
+    private String idempotencyKey;
 
-	private String idempotentOperationResult;
+    private String idempotentOperationResult;
 
 }

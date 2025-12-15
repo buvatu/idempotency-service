@@ -23,7 +23,6 @@ The service implements a two-phase idempotency pattern:
 
 - **IdempotencyService**: Main service interface for idempotency operations
 - **MongoDB Collections**: Six specialized collections for different aspects of operation tracking
-- **Cache Layer**: In-memory caching for performance optimization
 - **REST API**: Simple HTTP endpoints for integration
 
 ## 📋 Prerequisites
@@ -46,7 +45,7 @@ cd idempotency-service
 docker run -d --name mongodb -p 27017:27017 mongo:latest
 
 # Create database and collections
-mongosh --file schema/mongodb-collections.js
+mongosh --file schema/idempotency-service-collections.js
 ```
 
 ### 3. Configure Application
@@ -84,8 +83,7 @@ The service will start on `http://localhost:8080`
 {
   "service": "payment-service",
   "operation": "process-payment",
-  "idempotencyKey": "user123-payment-456",
-  "idempotentOperationResult": "optional-payload"
+  "idempotencyKey": "user123-payment-456"
 }
 ```
 
@@ -94,31 +92,40 @@ The service will start on `http://localhost:8080`
 - **200 OK** - Operation result found in cache:
 ```json
 {
-  "idempotencyID": "uuid",
+  "idempotencyId": null,
+  "service": "test-service",
+  "operation": "test-operation",
+  "idempotencyKey": "user123-payment-456",
+  "lockId": null,
   "executionResult": "SUCCESS",
-  "idempotentOperationResult": "cached-result",
-  "timestamp": "2024-01-01T12:00:00Z",
-  "message": "Operation result retrieved from cache"
+  "idempotentOperationResult": "test-success",
+  "lockedAt": null,
+  "expiredAt": null
 }
 ```
 
 - **202 ACCEPTED** - Lock acquired, proceed with operation:
 ```json
 {
-  "idempotencyID": "uuid",
-  "lockID": "uuid",
+  "idempotencyId": "d7c1cdc2-315e-4ca5-976b-a9dd0800a02f",
+  "service": "test-service",
+  "operation": "test-operation",
+  "idempotencyKey": "298fd1b6-f8c9-4d21-a1ad-12dcbdc53b5a",
+  "lockId": "21993768-1b4f-40b8-892d-658e2648645f",
   "executionResult": "OPERATION_LOCKED_SUCCESSFULLY",
-  "timestamp": "2024-01-01T12:00:00Z",
-  "message": "Operation locked successfully, proceed with execution"
+  "idempotentOperationResult": null,
+  "lockedAt": "2025-12-15T08:33:02.478688300Z",
+  "expiredAt": "2025-12-15T08:34:02.478688300Z"
 }
 ```
 
 - **409 CONFLICT** - Operation already in progress:
 ```json
 {
+  "timestamp": "2025-12-15T08:33:57.974929100Z",
+  "message": "Operation is already locked by another process",
   "executionResult": "OPERATION_ALREADY_LOCKED",
-  "timestamp": "2024-01-01T12:00:00Z",
-  "message": "Operation processing completed"
+  "validationErrors": null
 }
 ```
 
@@ -129,64 +136,20 @@ The service will start on `http://localhost:8080`
 **Request Body**:
 ```json
 {
-  "lockID": "uuid-from-lock-response",
-  "idempotencyID": "uuid-from-lock-response",
-  "service": "payment-service",
-  "operation": "process-payment",
-  "idempotencyKey": "user123-payment-456",
+  "idempotencyId": "77d59e3e-c3bc-44bf-8c33-48c5e2635bfc",
+  "service": "test-service",
+  "operation": "test-operation",
+  "idempotencyKey": "8666df43-bac7-45f0-91f7-5e3c59aa79c6",
+  "lockId": "96e8c215-143d-4f49-af7a-7d32ac97ea97",
   "executionResult": "SUCCESS",
-  "idempotentOperationResult": "operation-result-data"
+  "idempotentOperationResult": "Test",
+  "lockedAt": "2025-12-15T08:34:23.532131500Z",
+  "expiredAt": "2025-12-15T08:35:23.532131500Z"
 }
 ```
 
 **Response**:
 ```json
-{
-  "timestamp": "2024-01-01T12:00:00Z",
-  "message": "Operation result saved successfully",
-  "executionResult": "SAVED"
-}
-```
-
-## 🔄 Usage Flow
-
-### Typical Integration Pattern
-
-```java
-// 1. Request lock or get cached result
-IdempotentOperationResult request = new IdempotentOperationResult();
-request.setService("payment-service");
-request.setOperation("process-payment");
-request.setIdempotencyKey("user123-payment-456");
-
-ResponseEntity<IdempotencyResponse> response = 
-    restTemplate.postForEntity("/idempotent-operation", request, IdempotencyResponse.class);
-
-if (response.getStatusCode() == HttpStatus.OK) {
-    // Result already exists, use cached result
-    return response.getBody().getIdempotentOperationResult();
-    
-} else if (response.getStatusCode() == HttpStatus.ACCEPTED) {
-    // Lock acquired, execute operation
-    String result = executeBusinessLogic();
-    
-    // Save result
-    IdempotentOperationResult saveRequest = new IdempotentOperationResult();
-    saveRequest.setLockID(response.getBody().getLockID());
-    saveRequest.setIdempotencyID(response.getBody().getIdempotencyID());
-    saveRequest.setService("payment-service");
-    saveRequest.setOperation("process-payment");
-    saveRequest.setIdempotencyKey("user123-payment-456");
-    saveRequest.setExecutionResult("SUCCESS");
-    saveRequest.setIdempotentOperationResult(result);
-    
-    restTemplate.postForEntity("/idempotent-operation/result", saveRequest, IdempotencyResponse.class);
-    return result;
-    
-} else {
-    // Operation already in progress by another thread/service
-    throw new ConcurrentOperationException("Operation already in progress");
-}
 ```
 
 ## 🗄️ Database Schema
@@ -216,26 +179,9 @@ mvn verify
 
 ### Test Coverage
 The project includes comprehensive unit tests with 100% coverage of core business logic:
-- 18 unit tests covering all scenarios
+- 19 unit tests covering all scenarios
 - Mock-based testing for isolated unit testing
 - Integration tests for end-to-end workflows
-
-## 📊 Monitoring & Health Checks
-
-### Health Check
-```bash
-curl http://localhost:8080/actuator/health
-```
-
-### Metrics
-```bash
-curl http://localhost:8080/actuator/metrics
-```
-
-### Application Info
-```bash
-curl http://localhost:8080/actuator/info
-```
 
 ## ⚙️ Configuration
 
@@ -244,24 +190,26 @@ curl http://localhost:8080/actuator/info
 ```yaml
 # MongoDB Configuration
 spring:
+  application:
+    name: idempotency-service
   data:
     mongodb:
-      uri: mongodb://localhost:27017/idempotent_service
-      database: idempotent_service
+      uri: mongodb://localhost:27017/idempotency_service
+      database: idempotency_service
 
-# Server Configuration
 server:
   port: 8080
 
-# Logging Configuration
 logging:
   level:
     microservices.helper.idempotency: INFO
+    org.springframework.data.mongodb: INFO
+    root: INFO
 
-# Idempotency Configuration
 idempotent:
+  lock-duration: 1m # Default lock for one operation is 1 minute
   scheduling:
-    expired-lock-removal-rate: 3600000  # 1 hour in milliseconds
+    expired-lock-removal-rate: 0 */30 * * * *
 ```
 
 ### Environment Variables
@@ -323,6 +271,7 @@ spec:
 - Ensure proper indexing (use provided index scripts)
 - Configure appropriate connection pool sizes
 - Use MongoDB replica sets for high availability
+- Consider using sharding when number of operations goes too high
 
 ### Application Optimization
 - Configure JVM heap size appropriately

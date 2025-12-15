@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
@@ -18,71 +19,65 @@ import microservices.helper.idempotency.repository.IdempotentOperationConfigRepo
 @Slf4j
 public class IdempotentOperationConfigCache {
 
-	private final List<IdempotentOperationConfig> operationConfigList = new CopyOnWriteArrayList<>();
-	private final IdempotentOperationConfigRepository idempotentOperationConfigRepository;
+    @Value("${idempotent.lock-duration}")
+    private Duration lockDuration;
 
-	public IdempotentOperationConfigCache(IdempotentOperationConfigRepository idempotentOperationConfigRepository) {
-		this.idempotentOperationConfigRepository = idempotentOperationConfigRepository;
-	}
+    private final List<IdempotentOperationConfig> operationConfigList = new CopyOnWriteArrayList<>();
+    private final IdempotentOperationConfigRepository idempotentOperationConfigRepository;
 
-	@PostConstruct
-	private void loadCache() {
-		operationConfigList.addAll(idempotentOperationConfigRepository.findAll());
-	}
-
-	public boolean isAllowSaveOnExpired(String service, String operation) {
-		IdempotentOperationConfig operationConfig = findInCurrentList(service, operation);
-		if (operationConfig != null) {
-			return operationConfig.isAllowSaveOnExpired();
-		}
-		operationConfig = findInDB(service, operation);
-		if (operationConfig != null) {
-			return operationConfig.isAllowSaveOnExpired();
-		}
-		saveNewOperationConfig(service, operation);
-		return true; // Default value
-	}
-
-	public Duration getLockDuration(String service, String operation) {
-		IdempotentOperationConfig operationConfig = findInCurrentList(service, operation);
-		if (operationConfig != null) {
-			return operationConfig.getLockDuration();
-		}
-		operationConfig = findInDB(service, operation);
-		if (operationConfig != null) {
-			return operationConfig.getLockDuration();
-		}
-		saveNewOperationConfig(service, operation);
-		return Duration.ofMillis(5000); // Default value
-	}
-	
-	private IdempotentOperationConfig findInCurrentList(String service, String operation) {
-		for (IdempotentOperationConfig operationConfig : operationConfigList) {
-			if (operationConfig.getService().equals(service) && operationConfig.getOperation().equals(operation)) {
-				return operationConfig;
-			}
-		}
-		return null;
-	}
-
-	private IdempotentOperationConfig findInDB(String service, String operation) {
-		Optional<IdempotentOperationConfig> operationConfigOpt = idempotentOperationConfigRepository.findByServiceAndOperation(service, operation);
-        return operationConfigOpt.orElse(null);
+    public IdempotentOperationConfigCache(IdempotentOperationConfigRepository idempotentOperationConfigRepository) {
+        this.idempotentOperationConfigRepository = idempotentOperationConfigRepository;
     }
 
-	private void saveNewOperationConfig(String service, String operation) {
-		try {
-			IdempotentOperationConfig newOperationConfig = new IdempotentOperationConfig();
-			newOperationConfig.setId(UUID.randomUUID().toString());
-			newOperationConfig.setService(service);
-			newOperationConfig.setOperation(operation);
-			newOperationConfig.setLockDuration(Duration.ofMillis(5000));
-			newOperationConfig.setAllowSaveOnExpired(true);
-			idempotentOperationConfigRepository.save(newOperationConfig);
-			operationConfigList.add(newOperationConfig);
-		} catch (Exception e) {
-			log.error("failed to save idempotent operation config");
-		}
-	}
+    @PostConstruct
+    private void loadCache() {
+        operationConfigList.addAll(idempotentOperationConfigRepository.findAll());
+    }
+
+    public Duration getLockDuration(String service, String operation) {
+        IdempotentOperationConfig operationConfig = findInCurrentList(service, operation);
+        if (operationConfig != null) {
+            return operationConfig.getLockDuration();
+        }
+        IdempotentOperationConfig operationConfigInDB = findInDB(service, operation);
+        if (operationConfigInDB != null) {
+            return operationConfigInDB.getLockDuration();
+        }
+        saveNewOperationConfig(service, operation);
+        return lockDuration; // Default value
+    }
+    
+    private IdempotentOperationConfig findInCurrentList(String service, String operation) {
+        for (IdempotentOperationConfig operationConfig : operationConfigList) {
+            if (operationConfig.getService().equals(service) && operationConfig.getOperation().equals(operation)) {
+                return operationConfig;
+            }
+        }
+        return null;
+    }
+
+    private IdempotentOperationConfig findInDB(String service, String operation) {
+        Optional<IdempotentOperationConfig> operationConfigOpt = idempotentOperationConfigRepository.findByServiceAndOperation(service, operation);
+        if (operationConfigOpt.isPresent()) {
+            operationConfigList.add(operationConfigOpt.get());
+            return operationConfigOpt.get();
+        } else {
+            return null;
+        }
+    }
+
+    private void saveNewOperationConfig(String service, String operation) {
+        IdempotentOperationConfig newOperationConfig = new IdempotentOperationConfig();
+        newOperationConfig.setId(UUID.randomUUID().toString());
+        newOperationConfig.setService(service);
+        newOperationConfig.setOperation(operation);
+        newOperationConfig.setLockDuration(lockDuration);
+        try {
+            idempotentOperationConfigRepository.save(newOperationConfig);
+            operationConfigList.add(newOperationConfig);
+        } catch (Exception e) {
+            log.error("failed to save idempotent operation config");
+        }
+    }
 
 }

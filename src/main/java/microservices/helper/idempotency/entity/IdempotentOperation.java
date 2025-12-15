@@ -15,15 +15,15 @@ import java.util.UUID;
 @Data
 public class IdempotentOperation {
 
-	@Id
-	private String id; // In UUIDv4 format
+    @Id
+    private String id; // In UUIDv4 format
 
-	private String service;
+    private String service;
 
-	private String operation;
+    private String operation;
 
-	private String idempotencyKey;
+    private String idempotencyKey;
 
-	private Instant createdAt;
+    private Instant createdAt;
 
 }

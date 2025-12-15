@@ -10,6 +10,6 @@ import microservices.helper.idempotency.entity.IdempotentOperationConfig;
 @Repository
 public interface IdempotentOperationConfigRepository extends MongoRepository<IdempotentOperationConfig, String> {
 
-	Optional<IdempotentOperationConfig> findByServiceAndOperation(String service, String operation);
+    Optional<IdempotentOperationConfig> findByServiceAndOperation(String service, String operation);
 
 }

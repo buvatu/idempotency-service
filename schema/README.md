@@ -4,7 +4,7 @@ This folder contains the database schema definition and index creation scripts f
 
 ## Files
 
-### mongodb-collections.js
+### idempotency-service-collections.js
 Creates all six required collections with validation schemas:
 - `idempotent_operation_config` - Configuration for operations
 - `idempotent_operation` - Main operation tracking
@@ -13,22 +13,12 @@ Creates all six required collections with validation schemas:
 - `idempotent_operation_lock` - Lock history records
 - `failed_idempotent_operation_result` - Failed operation results
 
-### mongodb-indexes.js
-Creates all required indexes for performance optimization:
-- Unique constraints for preventing duplicates
-- TTL indexes for automatic cleanup
-- Compound indexes for efficient queries
-- Single field indexes for fast lookups
-
 ## Usage
 
 ### Using MongoDB Shell
 ```bash
 # Create collections
-mongosh --file src/main/resources/schema/mongodb-collections.js
-
-# Create indexes
-mongosh --file src/main/resources/schema/mongodb-indexes.js
+mongosh --file src/main/resources/schema/idempotency-service-collections.js
 ```
 
 ### Using MongoDB Compass
@@ -40,8 +30,7 @@ mongosh --file src/main/resources/schema/mongodb-indexes.js
 ### Using Docker
 ```bash
 # If using MongoDB in Docker
-docker exec -i mongodb-container mongosh < src/main/resources/schema/mongodb-collections.js
-docker exec -i mongodb-container mongosh < src/main/resources/schema/mongodb-indexes.js
+docker exec -i mongodb-container mongosh < src/main/resources/schema/idempotency-service-collections.js
 ```
 
 ## Collection Schemas
@@ -49,35 +38,30 @@ docker exec -i mongodb-container mongosh < src/main/resources/schema/mongodb-ind
 ### idempotent_operation_config
 Stores configuration for each service-operation combination.
 - **Unique Index**: service + operation
-- **Fields**: service, operation, lockDuration, executionDurationLimit
+- **Fields**: service, operation, lockDuration
 
 ### idempotent_operation_lock_temp
 Temporary locks with automatic expiration.
 - **Unique Index**: service + operation + idempotencyKey
 - **TTL Index**: expiredAt (automatic cleanup)
-- **Fields**: service, operation, idempotencyKey, expiredAt
+- **Fields**: idempotencyId, service, operation, idempotencyKey, createdAt, expiredAt
 
 ### stored_idempotent_operation_result
 Successful operation results for idempotency.
 - **Unique Index**: service + operation + idempotencyKey
-- **Index**: idempotencyID
-- **Fields**: service, operation, idempotencyKey, idempotencyID, result
+- **Fields**: service, operation, idempotencyKey, idempotentOperationResult
 
 ### idempotent_operation
 Main operation tracking records.
-- **Unique Index**: idempotencyID
-- **Index**: service + operation + idempotencyKey
-- **Fields**: idempotencyID, service, operation, idempotencyKey
+- **Fields**: service, operation, idempotencyKey, createdAt
 
 ### idempotent_operation_lock
 Lock history and status tracking.
-- **Indexes**: lockID, idempotencyID, service + operation + idempotencyKey, releasedAt
-- **Fields**: service, operation, idempotencyKey, idempotencyID, lockID, status, timestamps
+- **Fields**: idempotencyId, createdAt, lockedAt, expiredAt
 
 ### failed_idempotent_operation_result
 Failed operation results and timeout records.
-- **Indexes**: idempotencyID, service + operation + idempotencyKey
-- **Fields**: service, operation, idempotencyKey, idempotencyID, failureReason, originalResult
+- **Fields**: lockId, errorMessage
 
 ## Notes
 

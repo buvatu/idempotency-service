@@ -16,19 +16,19 @@ import java.time.Instant;
 @Data
 public class IdempotentOperationLockTemp {
 
-	@Id
-	private String id;// In UUIDv4 format
+    @Id
+    private String id;// In UUIDv4 format
 
-    private String idempotencyID;// In UUIDv4 format
+    private String idempotencyId;// In UUIDv4 format
 
-	private String service;
+    private String service;
 
-	private String operation;
+    private String operation;
 
-	private String idempotencyKey;
+    private String idempotencyKey;
 
-	private Instant lockedAt;
+    private Instant lockedAt;
 
-	private Instant expiredAt;
+    private Instant expiredAt;
 
 }

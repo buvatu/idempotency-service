@@ -7,7 +7,4 @@ import microservices.helper.idempotency.entity.IdempotentOperation;
 
 @Repository
 public interface IdempotentOperationRepository extends MongoRepository<IdempotentOperation, String> {
-
-	
-
 }

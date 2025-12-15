@@ -14,7 +14,7 @@ public class IdempotentOperationLock {
 	@Id
 	private String id;// In UUIDv4 format
 
-	private String idempotencyID;// In UUIDv4 format
+	private String idempotencyId;// In UUIDv4 format
 
 	private Instant lockedAt;
 

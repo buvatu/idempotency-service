@@ -3,6 +3,10 @@ package microservices.helper.idempotency.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.mongodb.client.MongoClient;
+import net.javacrumbs.shedlock.core.LockProvider;
+import net.javacrumbs.shedlock.provider.mongo.MongoLockProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
@@ -14,6 +18,10 @@ import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
 
 @Configuration
 public class IdempotencyServiceConfig {
+
+    @Value("${spring.data.mongodb.database}")
+    private String databaseName;
+
     @Bean
     public ObjectMapper objectMapper() {
         ObjectMapper mapper = new ObjectMapper();
@@ -23,13 +31,9 @@ public class IdempotencyServiceConfig {
     }
 
     @Bean
-    public MappingMongoConverter mappingMongoConverter(
-            MongoDatabaseFactory databaseFactory,
-            MongoMappingContext context,
-            MongoCustomConversions conversions) {
+    public MappingMongoConverter mappingMongoConverter(MongoDatabaseFactory databaseFactory, MongoMappingContext context, MongoCustomConversions conversions) {
 
-        MappingMongoConverter converter = new MappingMongoConverter(
-                new DefaultDbRefResolver(databaseFactory), context);
+        MappingMongoConverter converter = new MappingMongoConverter(new DefaultDbRefResolver(databaseFactory), context);
 
         converter.setCustomConversions(conversions);
 
@@ -38,4 +42,10 @@ public class IdempotencyServiceConfig {
 
         return converter;
     }
+
+    @Bean
+    public LockProvider lockProvider(MongoClient mongoClient) {
+        return new MongoLockProvider(mongoClient.getDatabase(databaseName));
+    }
+
 }

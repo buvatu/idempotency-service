@@ -18,7 +18,7 @@ public class FailedIdempotentOperationResult {
 	@Id
 	private String id; // In UUIDv4 format
 
-    private String lockID;
+    private String lockId;
 
 	private String errorMessage;
 

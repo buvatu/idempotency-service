@@ -17,14 +17,13 @@ import java.util.UUID;
 @Data
 public class IdempotentOperationConfig {
 
-	@Id
-	private String id;// In UUIDv4 format
+    @Id
+    private String id;// In UUIDv4 format
 
-	private String service;
+    private String service;
 
-	private String operation;
+    private String operation;
 
-	private Duration lockDuration;
+    private Duration lockDuration;
 
-	private boolean allowSaveOnExpired;
 }
