@@ -18,6 +18,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import lombok.AllArgsConstructor;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import microservices.helper.idempotency.enums.ExecutionResult;
 import microservices.helper.idempotency.exception.IdempotencyException;
@@ -46,7 +47,9 @@ public class IdempotencyServiceImpl implements IdempotencyService {
         IdempotentOperation idempotentOperation = createIdempotentOperation(input);
 
         // STEP 2: Check if a result already exists (fast path)
-        Optional<StoredIdempotentOperationResult> existingResult = storedIdempotentOperationResultRepository.findById(getHashedKey(input.getService(), input.getOperation(), input.getIdempotencyKey()));
+        String hashedKey = getHashedKey(input.getService(), input.getOperation(), input.getIdempotencyKey());
+        Optional<StoredIdempotentOperationResult> existingResult = hashedKey != null ? 
+            storedIdempotentOperationResultRepository.findById(hashedKey) : Optional.empty();
         if (existingResult.isPresent()) {
             log.info("Found existing result, returning cached response");
             return getCachedResult(existingResult.get());
@@ -58,9 +61,10 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 
         // Schedule to clean up lock and operation
         scheduler.schedule(() -> {
-            if (idempotentOperationLockTempRepository.existsById(tempLock.getId())) { // That means the operation is not completed
-                deleteTempLock(tempLock.getId());
-                insertLockRecord(tempLock.getId(), tempLock.getIdempotencyId(), tempLock.getLockedAt(), tempLock.getExpiredAt());
+            String lockId = tempLock.getId();
+            if (lockId != null && idempotentOperationLockTempRepository.existsById(lockId)) { // That means the operation is not completed
+                deleteTempLock(lockId);
+                insertLockRecord(lockId, tempLock.getIdempotencyId(), tempLock.getLockedAt(), tempLock.getExpiredAt());
                 saveFailedResult(tempLock.getIdempotencyId(), tempLock.getId(), ExecutionResult.OPERATION_EXPIRED.getValue());
             }
         }, tempLock.getExpiredAt().toEpochMilli() - Instant.now().toEpochMilli(), TimeUnit.MILLISECONDS);
@@ -69,8 +73,13 @@ public class IdempotencyServiceImpl implements IdempotencyService {
     }
 
     // Get hashed key as a base64 string
-    private String getHashedKey(String service, String operation, String idempotencyKey) {
-        return Base64.getEncoder().encodeToString(DigestUtils.md5Digest((service + "-" + operation + "-" + idempotencyKey).getBytes()));
+    private String getHashedKey(@NonNull String service,@NonNull String operation,@NonNull String idempotencyKey) {
+        String combinedKey = service + "-" + operation + "-" + idempotencyKey;
+        byte[] keyBytes = combinedKey.getBytes();
+        if (keyBytes == null) {
+            throw new IllegalArgumentException("Failed to convert key to bytes");
+        }
+        return Base64.getEncoder().encodeToString(DigestUtils.md5Digest(keyBytes));
     }
 
     private IdempotentOperation createIdempotentOperation(IdempotentOperationResult input) {
@@ -144,7 +153,8 @@ public class IdempotencyServiceImpl implements IdempotencyService {
         validateInput(input);
 
         // Check the temp lock is existing or not
-        IdempotentOperationLockTemp tempLock = idempotentOperationLockTempRepository.findById(input.getLockId()).orElse(null);
+        String lockId = input.getLockId();
+        IdempotentOperationLockTemp tempLock = lockId != null ? idempotentOperationLockTempRepository.findById(lockId).orElse(null) : null;
         if (Objects.nonNull(tempLock)) { // Operation is not expired
             deleteTempLock(tempLock.getId());
             insertLockRecord(tempLock.getId(), tempLock.getIdempotencyId(), tempLock.getLockedAt(), tempLock.getExpiredAt());
@@ -215,9 +225,9 @@ public class IdempotencyServiceImpl implements IdempotencyService {
         }
     }
 
-    private void deleteTempLock(String lockID) {
+    private void deleteTempLock(@NonNull String lockId) {
         try {
-            idempotentOperationLockTempRepository.deleteById(lockID);
+            idempotentOperationLockTempRepository.deleteById(lockId);
             log.info("Successfully cleaned up temporary lock");
         } catch (Exception e) {
             // Don't throw exception here as the main operation is complete

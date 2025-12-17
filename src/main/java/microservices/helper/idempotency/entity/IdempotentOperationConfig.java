@@ -6,7 +6,6 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 
 import java.time.Duration;
-import java.util.UUID;
 
 /**
  * Entity representing operation configuration. Maps to the

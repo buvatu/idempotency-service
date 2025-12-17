@@ -1,7 +1,6 @@
 package microservices.helper.idempotency.model;
 
 import java.time.Instant;
-import java.util.UUID;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;

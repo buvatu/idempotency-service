@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mongodb.client.MongoClient;
+
+import lombok.NonNull;
 import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.provider.mongo.MongoLockProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,7 +33,7 @@ public class IdempotencyServiceConfig {
     }
 
     @Bean
-    public MappingMongoConverter mappingMongoConverter(MongoDatabaseFactory databaseFactory, MongoMappingContext context, MongoCustomConversions conversions) {
+    public MappingMongoConverter mappingMongoConverter(@NonNull MongoDatabaseFactory databaseFactory,@NonNull MongoMappingContext context,@NonNull MongoCustomConversions conversions) {
 
         MappingMongoConverter converter = new MappingMongoConverter(new DefaultDbRefResolver(databaseFactory), context);
 
